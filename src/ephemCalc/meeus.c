@@ -66,3 +66,9 @@ void meeus_computeEphemeris(int bodyId, double jd, double *x, double *y, double 
 
 }
 
+//! meeus_shutdown - Free malloced memory within this module
+
+void meeus_shutdown() {
+}
+
+

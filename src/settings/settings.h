@@ -33,13 +33,13 @@ typedef struct settings {
     int use_orbital_elements, output_binary, output_format, output_constellations;
     int body_id[MAX_OBJECTS];
     char object_name[MAX_OBJECTS][FNAME_LENGTH];
-    const char *objects_input_list, *jd_list;
+    char *objects_input_list, *jd_list;
     int objects_count;
 } settings;
 
 void settings_default(settings *i);
 
-void settings_process(settings *i);
+void settings_process(settings *i, int *status, char *error_text);
 
 void settings_close(settings *i);
 

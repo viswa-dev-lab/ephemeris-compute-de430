@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.6)
 project(ephemeris_compute)
 
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -Wall -std=c99 -D SRCDIR='\"${CMAKE_SOURCE_DIR}/src/\"' -D DCFVERSION='\"6.0\"' -D DEBUG=0 -D MEMDEBUG1=0 -D MEMDEBUG2=0")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O0 -Wall -std=c99 -D SRCDIR='\"${CMAKE_SOURCE_DIR}/src/\"' -D DCFVERSION='\"7.0\"' -D DEBUG=0 -D MEMDEBUG1=0 -D MEMDEBUG2=0")
 
 include_directories(src)
 include_directories(src/argparse)
@@ -17,6 +17,8 @@ set(SOURCE_FILES
         src/argparse/argparse.c
         src/argparse/argparse.h
         src/asteroids.c
+        src/compute.c
+        src/compute.h
         src/coreUtils/asciiDouble.c
         src/coreUtils/asciiDouble.h
         src/coreUtils/errorReport.c
@@ -50,7 +52,12 @@ set(SOURCE_FILES
         src/mathsTools/sphericalAst.c
         src/mathsTools/sphericalAst.h
         src/settings/settings.c
-        src/settings/settings.h)
+        src/settings/settings.h
+        src/socket_client.c
+        src/socket_server.c
+)
 
 add_executable(ephem ${SOURCE_FILES} src/main.c)
 add_executable(asteroids ${SOURCE_FILES} src/asteroids.c)
+add_executable(socket_client ${SOURCE_FILES} src/socket_client.c)
+add_executable(socket_server ${SOURCE_FILES} src/socket_server.c)

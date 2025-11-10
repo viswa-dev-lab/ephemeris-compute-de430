@@ -24,7 +24,7 @@
 
 void constellations_init();
 
-char *constellations_fetch(double ra, double dec);
+char *constellations_fetch(double ra, double dec, int output_long_name);
 
 void constellations_close();
 

@@ -1,4 +1,4 @@
-// meeus.h
+// compute.h
 // 
 // -------------------------------------------------
 // Copyright 2015-2025 Dominic Ford
@@ -19,16 +19,17 @@
 // along with EphemerisCompute.  If not, see <http://www.gnu.org/licenses/>.
 // -------------------------------------------------
 
-#ifndef MEEUS_H
-#define MEEUS_H 1
+#ifndef COMPUTE_H
+#define COMPUTE_H 1
 
-void meeus_computeEphemeris(int bodyId, double jd, double *x, double *y, double *z, double *ra,
-                            double *dec, double *mag, double *phase, double *angSize, double *phySize, double *albedo,
-                            double *sunDist, double *earthDist, double *sunAngDist, double *theta_eso,
-                            double *eclipticLongitude, double *eclipticLatitude,
-                            double *eclipticDistance, double ra_dec_epoch,
-                            int do_topocentric_correction, double topocentric_latitude, double topocentric_longitude);
+#include <stdio.h>
+#include "settings/settings.h"
 
-void meeus_shutdown();
+int compute_ephemeris_time_point(const settings *s, FILE *output, const double jd);
+
+int compute_ephemeris(settings *s, FILE *output, long *rows_computed, int *status, char *error_text);
+
+void compute_ephemeris_shutdown();
 
 #endif
+

@@ -1,4 +1,4 @@
-// main.c
+// socket_client.c
 // 
 // -------------------------------------------------
 // Copyright 2015-2025 Dominic Ford
@@ -19,40 +19,60 @@
 // along with EphemerisCompute.  If not, see <http://www.gnu.org/licenses/>.
 // -------------------------------------------------
 
+#include <arpa/inet.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
+#include <time.h>
+#include <unistd.h>
 
-#include <gsl/gsl_errno.h>
-
-#include "compute.h"
+#include <sys/socket.h>
 
 #include "argparse/argparse.h"
 #include "coreUtils/errorReport.h"
-#include "ephemCalc/constellations.h"
-#include "listTools/ltMemory.h"
 #include "settings/settings.h"
 
 static const char *const usage[] = {
-        "ephem.bin [options] [[--] args]",
-        "ephem.bin [options]",
+        "socket_client.bin [options] [[--] args]",
+        "socket_client.bin [options]",
         NULL,
 };
 
-//! Main entry point for stand-alone ephemeris compute tool. This version of the tool computes the ephemeris and then
-//! exits, unlike the socket client/server tools, which achieve more efficiency by having a background server which
-//! keeps ephemeris data in memory.
+//! Maximum length of sleep for <connect_retry>, in ms
+const int max_sleep = 320;
+
+//! connect_retry - Connect to a socket with retries after a short delay.
+//! \param socket_fd - Socket file descriptor
+//! \param addr - Address of the socket to connect to
+//! \param alen - Length of addr
+//! \return - Boolean indicating whether a successful connection was made
+int connect_retry(int socket_fd, const struct sockaddr *addr, socklen_t alen) {
+    // Try to connect to the socket_server with an exponential back off
+    for (int pause_ms = 10; pause_ms <= max_sleep; pause_ms <<= 1) {
+        if (connect(socket_fd, addr, alen) == 0) {
+            // Successful connection
+            return 0;
+        }
+
+        // Pause and retry
+        struct timespec pause;
+        pause.tv_sec = 0;
+        pause.tv_nsec = (int) (pause_ms * 1e6);  // nanoseconds
+        nanosleep(&pause, NULL);
+    }
+
+    // Fail
+    return -1;
+}
+
+//! Main entry point for minimal client which connects to the ephemeris-compute socket service
 
 int main(int argc, const char **argv) {
     settings ephemeris_settings;
-
-    // Initialise sub-modules
-    if (DEBUG) ephem_log("Initialising ephemeris computer.");
-    lt_memoryInit(&ephem_error, &ephem_log);
-    constellations_init();
-
-    // Turn off GSL's automatic error handler
-    gsl_set_error_handler_off();
+    int service_port = 8091;
+    char *service_host = "127.0.0.1";
 
     // Set up default settings
     if (DEBUG) ephem_log("Setting up default ephemeris parameters.");
@@ -88,6 +108,11 @@ int main(int argc, const char **argv) {
                         "Set to either 0 (no column for constellation names) or 1"),
             OPT_STRING('o', "objects", &ephemeris_settings.objects_input_list,
                        "The list of objects to produce ephemerides for. See README.md."),
+
+            OPT_INTEGER('p', "port", &service_port,
+                        "Port number for remote computation service"),
+            OPT_STRING('h', "host", &service_host,
+                       "Hostname for remote computation service"),
             OPT_END(),
     };
 
@@ -106,21 +131,77 @@ int main(int argc, const char **argv) {
         ephem_fatal(__FILE__, __LINE__, "Unparsed arguments");
     }
 
-    // Create ephemeris
-    {
-        int status = 0;
-        char error_text[LSTR_LENGTH] = "\0";
-        long row_count = 0;
-        compute_ephemeris(&ephemeris_settings, stdout, &row_count, &status, error_text);
-        if (status) {
-            ephem_fatal(__FILE__, __LINE__, error_text);
-            exit(1);
-        }
+    // Open socket to computation server
+    const int client_fd = socket(AF_INET, SOCK_STREAM, 0);
+    if (client_fd < 0) {
+        printf("\n Socket creation error \n");
+        return -1;
     }
 
-    compute_ephemeris_shutdown();
-    lt_freeAll(0);
-    lt_memoryStop();
+    // Set address and port
+    struct sockaddr_in serv_addr;
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_port = htons(service_port);
+
+    // Convert IPv4 and IPv6 addresses from text to binary
+    const int addr_status = inet_pton(AF_INET, service_host, &serv_addr.sin_addr);
+    if (addr_status <= 0) {
+        printf("\nInvalid address/ Address not supported \n");
+        return -1;
+    }
+
+    // Connect to socket
+    const int status = connect_retry(client_fd, (struct sockaddr *) &serv_addr, sizeof(serv_addr));
+    if (status < 0) {
+        printf("\nConnection Failed \n");
+        return -1;
+    }
+
+    // Write query to buffer
+    char query_buffer[LSTR_LENGTH];
+    snprintf(query_buffer, LSTR_LENGTH,
+             "%.18e|%.18e|%.18e|%s|%.18e|%.18e|%d|%.18e|%d|%d|%d|%d|%s",
+             ephemeris_settings.jd_min, ephemeris_settings.jd_max, ephemeris_settings.jd_step,
+             ephemeris_settings.jd_list == NULL ? "" : ephemeris_settings.jd_list,
+             ephemeris_settings.latitude, ephemeris_settings.longitude,
+             ephemeris_settings.enable_topocentric_correction,
+             ephemeris_settings.ra_dec_epoch, ephemeris_settings.output_format, ephemeris_settings.use_orbital_elements,
+             ephemeris_settings.output_binary, ephemeris_settings.output_constellations,
+             ephemeris_settings.objects_input_list == NULL ? "" : ephemeris_settings.objects_input_list
+    );
+    send(client_fd, query_buffer, strlen(query_buffer), 0);
+
+    // Close socket for writing
+    shutdown(client_fd, SHUT_WR);
+
+    // Read back response, and send to stdout
+    int fd_to = fileno(stdout);
+    while (1) {
+        char buf[LSTR_LENGTH];
+        ssize_t nread = read(client_fd, buf, sizeof buf);
+        if (nread == 0) break;
+
+        char *out_ptr = buf;
+        ssize_t nwritten;
+
+        do {
+            nwritten = write(fd_to, out_ptr, nread);
+
+            if (nwritten >= 0) {
+                nread -= nwritten;
+                out_ptr += nwritten;
+            } else if (errno != EINTR) {
+                perror("Could not write output to stdout");
+                exit(EXIT_FAILURE);
+            }
+        } while (nread > 0);
+    }
+
+    // Close the connected socket
+    close(client_fd);
+
+    // Finished
+    settings_close(&ephemeris_settings);
     if (DEBUG) ephem_log("Terminating normally.");
     return 0;
 }

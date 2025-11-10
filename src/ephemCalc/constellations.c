@@ -133,7 +133,7 @@ void constellations_init() {
     // Loop over lines of constellation boundary data
     while ((!feof(file)) && (!ferror(file))) {
         double ra, dec;
-        file_readline(file, line);
+        file_readline(file, line, sizeof line);
         if ((line[0] == '#') || (strlen(line) < 28)) continue; // Comment line
         scan = line + 0;
         while ((scan[0] > '\0') && (scan[0] <= ' ')) scan++;
@@ -190,7 +190,7 @@ void constellations_init() {
 
         // Lines take the form:
         // short_name  long_name
-        file_readline(file, line);
+        file_readline(file, line, sizeof line);
         if ((line[0] == '#') || (strlen(line) < 4)) continue; // Comment line
 
         // Read short name
@@ -239,9 +239,10 @@ void constellations_init() {
 //! constellations_fetch - Determine which constellation a point lies within
 //! \param ra - The right ascension of the point whose constellation we are determining (radians)
 //! \param dec - The declination of the point whose constellation we are determining (radians)
+//! \param output_long_name - If true, the full name of the constellation is output. If false, then the abbreviation is output.
 //! \return The full name of the constellation, in a static character buffer
 
-char *constellations_fetch(const double ra, const double dec) {
+char *constellations_fetch(const double ra, const double dec, const int output_long_name) {
     int i, outcome[Nconstel];
 
 #pragma omp parallel for shared(outcome) private(i)
@@ -272,11 +273,11 @@ char *constellations_fetch(const double ra, const double dec) {
 
     // Work out which constellation produced a positive outcome
     for (i = 0; i < Nconstel; i++) {
-        if (outcome[i]) return constel_data[i].LongName;
+        if (outcome[i]) return output_long_name ? (constel_data[i].LongName) : (constel_data[i].ShortName);
     }
 
     // No constellation produced a positive outcome
-    return "Unknown";
+    return output_long_name ? "Unknown" : "???";
 }
 
 //! constellations_close - Free up any memory used by the constellations module.

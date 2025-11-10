@@ -63,7 +63,7 @@ docker compose run ephemeris-compute-de430
 To make other ephemerides, open a shell within the Docker container as follows:
 
 ```
-docker run -it ephemeris-compute-de430:v6 /bin/bash
+docker run -it ephemeris-compute-de430:v7 /bin/bash
 ```
 
 ### Producing an ephemeris
@@ -109,19 +109,27 @@ The following command-line arguments can be used to customise the ephemeris:
 
 * `--output_binary` [int] - If zero, a text-based ephemeris is produced. If non-zero, then the data is output as a stream of binary data, with type `double`. The first column, the Julian day number, is omitted from binary ephemerides.
 
-* `--output_constellations` [int] - If non-zero, then the final column states the name of the constellation the object is in. Note the fetching this information is one of the slowest routines within ephemerisCompute, so this may have significant performance impact when computing large ephemerides.
+* `--output_constellations` [int] - If non-zero, then the final column states the name of the constellation the object is in. Note the fetching this information is one of the slowest routines within ephemerisCompute, so this may have significant performance impact when computing large ephemerides. If binary output is requested, then the constellation name is output as an abbreviated name, with a fixed width of 8 bytes, at the end of each record.
 
 * `--use_orbital_elements` [int] - If zero, then the NASA JPL DE430 ephemeris is used to produce the ephemeris. This will give best accuracy (by far). If set to 1, then orbital elements for all objects are used to compute their approximate positions. If set to 2, then algorithms from Jean Meeus's book "Astronomical Algorithms" are used [not currently supported; do not use!]. The positions of comets and asteroids are always computed using orbital elements, since they are not included in DE430.
 
 * `--output_format` [int] - Selects what data should be returned. The following formats are currently supported:
 
-  * -1: XYZ position (ecliptic coordinates at epoch of observation)
-  * 0: XYZ position (in ICRS coordinates)
-  * 1: RA and Dec (in radians, J2000.0 coordinates; **recommended**)
-  * 2: X, Y, Z, RA, Dec, V-band magnitude, phase, angular size
-  * 3: As for 2, but also: physical size, albedo, sun_dist, earth_dist, sun_ang_dist, theta_edo, eclLng, eclDist, eclLat
+  * Binary mode:
+    * -1: X, Y, Z position (ecliptic coordinates at epoch of observation) [3 columns]
+    * 0: X, Y, Z position (in ICRS coordinates) [3 columns]
+    * 1: RA, Dec (in radians, J2000.0 coordinates; **recommended**) [2 columns]
+    * 2: X, Y, Z, RA, Dec, V-band magnitude, phase, angular size [8 columns]
+    * 3: As for 2, but also: physical size, albedo, sun_dist, earth_dist, sun_ang_dist, theta_edo, eclLng, eclDist, eclLat [17 columns]
+  * Text mode:
+    * -1: JD, X, Y, Z position (ecliptic coordinates at epoch of observation) [4 columns]
+    * 0: JD, X, Y, Z position (in ICRS coordinates) [4 columns]
+    * 1: JD, RA, Dec (in radians, J2000.0 coordinates; **recommended**) [3 columns]
+    * 2: JD, X, Y, Z, RA, Dec, V-band magnitude, phase, angular size [9 columns]
+    * 3: As for 2, but also: physical size, albedo, sun_dist, earth_dist, sun_ang_dist, theta_edo, eclLng, eclDist, eclLat [18 columns]
 
 ### Object names
+
 This section lists the names which are recognised by the `--objects` command-line argument:
 
 * `p1`, `pmercury`, `mercury`: Mercury
@@ -139,9 +147,35 @@ This section lists the names which are recognised by the `--objects` command-lin
 * `1P/Halley`. Comets may be referred to by their names in this format
 * `0001P`. Periodic comets may be referred to by their names in the format %4dP
 * `CJ95O010`. Comets may be referred to by their Minor Planet Center designations
-* `C<n>`: Comer number `n`. `n` is the line number within the file [Soft00Cmt.txt](http://www.minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt), downloaded from the Minor Planet Center.
+* `C<n>`: Comer number `n`. `n` is the line number within the file [Soft00Cmt.txt](http://www.minorplanetcenter.net/iau/Ephemerides/Comets/Soft00Cmt.txt), downloaded from the Minor Planet Center (MPC).
+
+## Ephemeris files
+
+When the software is installed, data files containing the orbital elements of asteroids and comets are downloaded from
+the following sources:
+
+* Asteroids, from the [Lowell Observatory](https://asteroid.lowell.edu/astorb/) website.
+* Comets, from the [Minor Planet Center](https://www.minorplanetcenter.net/data) (MPC) website
+
+The orbital elements published on these websites are typically accurate for a few years either side of the epoch when
+they were downloaded, but will give erroneous positions outside this time range due to orbital perturbations. The exact
+timescale for orbital perturbation is unique to each object, depending on its proximity to sources of perturbation -
+in particular, Jupiter.
+
+If a high degree of accuracy is required over a longer time span, the software supports the use of multiple orbital
+element files downloaded at different epochs. These should be placed in a directory `~/astorb_archive/` in the user's
+home directory; they should match the following wildcards:
+
+* `~/astorb_archive/astorb_*.dat`
+* `~/astorb_archive/Soft00Cmt_*.dat*`
+
+The software automatically reads the epoch specified within each data file and for each query will choose the two data
+files that are closest before and after the requested epoch. The predicted positions from the two data files are
+linearly interpolated to ensure that the output ephemerides are always continuous and differentiable.
 
 ### Change history
+
+**Version 7.0** (10 Nov 2025) - Support using multiple files of asteroid / comet orbital elements at different epochs. Add socket-based server/client interface for rapid queries.
 
 **Version 6.0** (23 Feb 2025) - Fix download links and improve documentation.
 

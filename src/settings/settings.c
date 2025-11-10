@@ -39,7 +39,7 @@ void settings_default(settings *i) {
     i->latitude = 0;
     i->longitude = 0;
     i->enable_topocentric_correction = 0;
-    i->ra_dec_epoch = 2451545.0;  // By default, use J2000 coordinates
+    i->ra_dec_epoch = 2451545.0; // By default, use J2000 coordinates
     i->output_format = 0;
     i->use_orbital_elements = 0;
     i->output_constellations = 0;
@@ -49,10 +49,36 @@ void settings_default(settings *i) {
     i->jd_list = NULL;
 }
 
+// Display a textual representation of a set of configuration settings
+void settings_display(const settings *i, FILE *output) {
+    fprintf(output, "jd_min = %.18e\n", i->jd_min);
+    fprintf(output, "jd_max = %.18e\n", i->jd_max);
+    fprintf(output, "jd_step = %.18e\n", i->jd_step);
+    fprintf(output, "latitude = %.18e\n", i->latitude);
+    fprintf(output, "longitude = %.18e\n", i->longitude);
+    fprintf(output, "enable_topocentric_correction = %d\n", i->enable_topocentric_correction);
+    fprintf(output, "ra_dec_epoch = %.18e\n", i->ra_dec_epoch);
+    fprintf(output, "output_format = %d\n", i->output_format);
+    fprintf(output, "use_orbital_elements = %d\n", i->use_orbital_elements);
+    fprintf(output, "output_constellations = %d\n", i->output_constellations);
+    fprintf(output, "output_binary = %d\n", i->output_binary);
+    fprintf(output, "objects_count = %d\n", i->objects_count);
+    fprintf(output, "objects_input_list = %s\n", i->objects_input_list);
+    fprintf(output, "jd_list = %s\n", i->jd_list);
+    fprintf(output, "\n");
+}
+
 // Process the contents of a settings structure before producing the ephemeris
-void settings_process(settings *i) {
+void settings_process(settings *i, int *status, char *error_text) {
     int k, l;
-    char name[FNAME_LENGTH];
+
+    // Debugging code to output the settings in use
+    //    {
+    //        FILE *o;
+    //        o = fopen("/tmp/ec_config", "a");
+    //        settings_display(i, o);
+    //        fclose(o);
+    //    }
 
     // Transfer the names of objects we are to compute ephemerides for from <i->objects_input_list> to <i->object_name>
     k = l = 0;
@@ -63,6 +89,12 @@ void settings_process(settings *i) {
                 i->object_name[i->objects_count][l] = '\0';
                 i->objects_count++;
                 l = 0;
+
+                if (i->objects_count >= MAX_OBJECTS) {
+                    *status = 1;
+                    snprintf(error_text, FNAME_LENGTH, "Too many objects (limit of %d).", MAX_OBJECTS);
+                    return;
+                }
             }
             k++; // next character
             continue;
@@ -72,7 +104,7 @@ void settings_process(settings *i) {
         i->object_name[i->objects_count][l++] = i->objects_input_list[k++];
     }
 
-    // Make sure that last object is added to list
+    // Make sure that the last object is added to the list
     if (l > 0) {
         i->object_name[i->objects_count][l] = '\0';
         i->objects_count++;
@@ -80,69 +112,19 @@ void settings_process(settings *i) {
 
     // Loop over all the objects we are producing an ephemeris for
     for (k = 0; k < i->objects_count; k++) {
-        i->body_id[k] = -1;
-
-        // Convert the name of the requested objects into numeric object IDs
-        strncpy(name, i->object_name[k], FNAME_LENGTH);
-        name[FNAME_LENGTH - 1] = '\0';
-        str_strip(name, name);
-        str_lower(name, name);
-        if ((strcmp(name, "mercury") == 0) || (strcmp(name, "pmercury") == 0) || (strcmp(name, "p1") == 0))
-            i->body_id[k] = 0;
-        else if ((strcmp(name, "venus") == 0) || (strcmp(name, "pvenus") == 0) || (strcmp(name, "p2") == 0))
-            i->body_id[k] = 1;
-        else if ((strcmp(name, "earth") == 0) || (strcmp(name, "pearth") == 0) || (strcmp(name, "p3") == 0))
-            i->body_id[k] = 19;
-        else if ((strcmp(name, "mars") == 0) || (strcmp(name, "pmars") == 0) || (strcmp(name, "p4") == 0))
-            i->body_id[k] = 3;
-        else if ((strcmp(name, "jupiter") == 0) || (strcmp(name, "pjupiter") == 0) || (strcmp(name, "p5") == 0))
-            i->body_id[k] = 4;
-        else if ((strcmp(name, "saturn") == 0) || (strcmp(name, "psaturn") == 0) || (strcmp(name, "p6") == 0))
-            i->body_id[k] = 5;
-        else if ((strcmp(name, "uranus") == 0) || (strcmp(name, "puranus") == 0) || (strcmp(name, "p7") == 0))
-            i->body_id[k] = 6;
-        else if ((strcmp(name, "neptune") == 0) || (strcmp(name, "pneptune") == 0) || (strcmp(name, "p8") == 0))
-            i->body_id[k] = 7;
-        else if ((strcmp(name, "pluto") == 0) || (strcmp(name, "ppluto") == 0) || (strcmp(name, "p9") == 0))
-            i->body_id[k] = 8;
-        else if ((strcmp(name, "moon") == 0) || (strcmp(name, "pmoon") == 0) || (strcmp(name, "p301") == 0))
-            i->body_id[k] = 9;
-        else if (strcmp(name, "sun") == 0)
-            i->body_id[k] = 10;
-        else if (((name[0] == 'a') || (name[0] == 'A')) && valid_float(name + 1, NULL)) {
-            // Asteroid, e.g. A1
-            i->body_id[k] = 10000000 + (int) get_float(name + 1, NULL);
-        } else if (((name[0] == 'c') || (name[0] == 'C')) && valid_float(name + 1, NULL)) {
-            // Comet, e.g. C1 (first in datafile)
-            i->body_id[k] = 20000000 + (int) get_float(name + 1, NULL);
-        } else {
-            // Search for comets with matching names
-
-            // Open comet database
-            orbitalElements_comets_init();
-
-            // Loop over comets seeing if names match
-            int index;
-            for (index = 0; index < comet_count; index++) {
-                // Fetch comet information
-                orbitalElements *item = orbitalElements_comets_fetch(index);
-
-                if ((str_cmp_no_case(name, item->name) == 0) || (str_cmp_no_case(name, item->name2) == 0)) {
-                    i->body_id[k] = 20000000 + index;
-                    break;
-                }
-            }
-        }
+        i->body_id[k] = orbitalElements_searchBodyIdByObjectName(i->object_name[k]);
 
         if (i->body_id[k] < 0) {
-            snprintf(temp_err_string, FNAME_LENGTH, "Unrecognised object name <%s>", name);
-            ephem_fatal(__FILE__, __LINE__, temp_err_string);
-            exit(1);
+            *status = 1;
+            snprintf(error_text, FNAME_LENGTH, "Unrecognised object name <%s>", i->object_name[k]);
+            return;
         }
     }
+
+    // Finished
+    *status = 0;
 }
 
 // Delete any memory allocated within a settings structure
 void settings_close(settings *i) {
 }
-

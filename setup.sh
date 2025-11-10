@@ -32,10 +32,21 @@ cd ${cwd} || exit
 # Delete old binary ephemeris files
 echo "[`date`] Cleaning old binary files"
 cd ${cwd} || exit
-rm -f data/dcfbinary*
+rm -f data/binary_*.bin
 
 # Compile the ephemerisCompute code
 echo "[`date`] Compiling code"
 cd ${cwd} || exit
 ./prettymake clean
 ./prettymake
+
+# Make some sample ephemerides, to ensure text input files are converted to binary
+echo "[`date`] Generating sample ephemerides"
+cd ${cwd} || exit
+./bin/ephem.bin -o jupiter
+./bin/ephem.bin -o A1
+./bin/ephem.bin -o 0002P
+
+# Finished
+cd ${cwd} || exit
+echo "[`date`] Finishing DoAll script"
